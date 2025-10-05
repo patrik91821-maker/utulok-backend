@@ -1,40 +1,18 @@
 const express = require('express');
-const knex = require('../db');
-const { authMiddleware, adminOnly } = require('../middleware/auth');
 const router = express.Router();
 
-// Get all shelters (admin)
-router.get('/shelters', authMiddleware, adminOnly, async (req, res) => {
-  try {
-    const rows = await knex('shelters').orderBy('created_at', 'desc');
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error' });
-  }
-});
+// 1. Importujeme všetky potrebné funkcie z kontroléra
+const adminController = require('../controllers/admin.controller');
+// 2. Importujeme správne pomenované middleware funkcie
+const { protect, adminOnly } = require('../middleware/auth'); 
 
-// Force deactivate shelter
-router.post('/shelters/:id/deactivate', authMiddleware, adminOnly, async (req, res) => {
-  const id = req.params.id;
-  try {
-    await knex('shelters').where({ id }).update({ active: false });
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error' });
-  }
-});
+// GET /admin/shelters - Získa zoznam všetkých útulkov (Admin)
+router.get('/shelters', protect, adminOnly, adminController.fetchAllShelters);
 
-// list payments
-router.get('/payments', authMiddleware, adminOnly, async (req, res) => {
-  try {
-    const rows = await knex('payments').orderBy('created_at', 'desc');
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error' });
-  }
-});
+// POST /admin/shelters/:id/deactivate - Násilná deaktivácia útulku (Admin)
+router.post('/shelters/:id/deactivate', protect, adminOnly, adminController.deactivateShelter);
+
+// GET /admin/payments - Získa zoznam všetkých platieb (Admin)
+router.get('/payments', protect, adminOnly, adminController.fetchAllPayments);
 
 module.exports = router;
