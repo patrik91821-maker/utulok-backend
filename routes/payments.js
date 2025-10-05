@@ -3,7 +3,7 @@ const knex = require('../db');
 const Stripe = require('stripe');
 require('dotenv').config();
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-08-01' });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const router = express.Router();
 
 // Create subscription checkout session for shelter (30 EUR/mo - price created in Stripe)
