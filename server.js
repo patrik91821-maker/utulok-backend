@@ -6,6 +6,7 @@ const path = require('path');
 
 const authRoutes = require('./routes/auth');
 const sheltersRoutes = require('./routes/shelters');
+const shelterRegisterRoutes = require('./routes/shelter');
 const dogsRoutes = require('./routes/dogs');
 const paymentsRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
@@ -25,6 +26,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Routes
 app.use('/auth', authRoutes);
 app.use('/shelters', sheltersRoutes);
+app.use('/shelter', shelterRegisterRoutes);
 app.use('/dogs', dogsRoutes);
 app.use('/payments', paymentsRoutes);
 app.use('/admin', adminRoutes);
