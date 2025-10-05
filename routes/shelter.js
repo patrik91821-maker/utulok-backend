@@ -1,4 +1,3 @@
-
 const express = require('express');
 const knex = require('../db');
 require('dotenv').config();
@@ -57,6 +56,24 @@ router.post('/register', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Registrácia útulku zlyhala.' });
+  }
+});
+
+// Získanie kontaktných údajov útulku podľa ID
+router.get('/:id/contact', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const shelter = await knex('shelters').where({ id }).first();
+    if (!shelter) return res.status(404).json({ error: 'Útulok nenájdený' });
+    res.json({
+      name: shelter.name,
+      email: shelter.email,
+      phone: shelter.phone,
+      address: shelter.address,
+      location: shelter.location
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Chyba databázy' });
   }
 });
 
