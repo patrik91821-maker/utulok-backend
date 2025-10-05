@@ -1,12 +1,12 @@
-const Dog = require('../models/Dog'); // Uistite sa, že model je importovaný
-const mongoose = require('mongoose');
+const knex = require('../db'); // Knex inštancia je správne importovaná
 
 // ====================================================================
 // 1. Vytvorenie nového psa (IBA pre Shelter Manager)
 // ====================================================================
-exports.createDog = async (req, res) => {
-    // userId bol pridaný do req v auth.middleware.js. V tomto prípade je to shelterId.
-    const shelterId = req.userId;
+exports.addDog = async (req, res) => {
+    // req.user je nastavené middlewarem, keď je užívateľ Shelter Manager.
+    // Získame ID útulku (shelter_id) z autentifikačného tokenu.
+    const shelterId = req.user.shelter_id || req.user.id; 
 
     // Kontrola, či Shelter Manager poslal potrebné dáta
     const { name, breed, description, age, gender, status, image_url } = req.body;
@@ -16,8 +16,8 @@ exports.createDog = async (req, res) => {
     }
 
     try {
-        const newDog = new Dog({
-            shelter: shelterId, // Automaticky priradíme shelterId
+        const dogData = {
+            shelter_id: shelterId, // Priradíme psa k útulku
             name,
             breed,
             description,
@@ -25,25 +25,45 @@ exports.createDog = async (req, res) => {
             gender,
             status: status || 'Available', // Predvolený stav
             image_url: image_url || 'https://placehold.co/600x400/FFC0CB/555555?text=Novy+pes',
-        });
+            created_at: new Date(),
+            updated_at: new Date(),
+        };
 
-        await newDog.save();
+        // Knex - Vložíme dáta do tabuľky 'dogs'
+        // Používame .returning('id') pre získanie nového ID záznamu
+        const [newDogId] = await knex('dogs').insert(dogData).returning('id');
 
         res.status(201).json({ 
             message: "Pes bol úspešne pridaný.", 
-            dog: newDog 
+            id: newDogId,
+            dog: dogData
         });
 
     } catch (error) {
         console.error("Chyba pri vytváraní psa:", error);
-        res.status(500).json({ message: "Interná chyba servera pri ukladaní psa." });
+        // Pošleme viac detailov chyby len pre debug
+        res.status(500).json({ 
+            message: "Interná chyba servera pri ukladaní psa. Skontrolujte schému DB.",
+            error_details: error.message 
+        });
     }
 };
 
-// ... Ďalšie kontrolné funkcie ...
+// ====================================================================
+// Dočasné dummy funkcie pre úspešné spustenie rout
+// ====================================================================
+
+exports.getAllDogs = (req, res) => res.status(501).json({ message: "Not Implemented: getAllDogs" });
+exports.getDogById = (req, res) => res.status(501).json({ message: "Not Implemented: getDogById" });
+exports.updateDog = (req, res) => res.status(501).json({ message: "Not Implemented: updateDog" });
+exports.deleteDog = (req, res) => res.status(501).json({ message: "Not Implemented: deleteDog" });
+
 
 // Export všetkých funkcií
 module.exports = {
-    createDog,
-    // ... ďalšie funkcie (napr. getAllDogs, getDogById, updateDog, deleteDog)
+    addDog: exports.addDog,
+    getAllDogs: exports.getAllDogs,
+    getDogById: exports.getDogById,
+    updateDog: exports.updateDog,
+    deleteDog: exports.deleteDog,
 };
