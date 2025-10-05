@@ -64,7 +64,7 @@ router.post('/create-donation-session', async (req, res) => {
     // store pending payment
     await knex('payments').insert({
       shelter_id,
-      dog_id: dog_id || null,
+      dog_id: (dog_id && dog_id > 0) ? dog_id : null,
       provider: 'stripe',
       provider_payment_id: session.id,
       amount_cents,
