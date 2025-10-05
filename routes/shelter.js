@@ -1,85 +1,131 @@
 const express = require('express');
 const knex = require('../db');
+const bcrypt = require('bcrypt'); // Pridaný import bcrypt (pretože sa používa v tejto rutine)
+const jwt = require('jsonwebtoken'); // Pridaný import jwt (pre automatické prihlásenie po registrácii)
 require('dotenv').config();
 
-const { sendShelterContactMessage } = require('../utils/emailService'); // NOVÝ IMPORT
+const { sendShelterContactMessage } = require('../utils/emailService');
+const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
+const SALT_ROUNDS = 10;
 
 const router = express.Router();
 
-// Zoznam všetkých útulkov pre výber pri darovaní
+// Zoznam všetkých útulkov pre výber pri darovaní / kontaktovaní
 router.get('/all', async (req, res) => {
-  try {
-    const shelters = await knex('shelters').select('id', 'name', 'location', 'description');
-    res.json(shelters);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Nepodarilo sa načítať útulky.' });
-  }
+    try {
+        // Dôležité: Ak sa user_id stane NOT NULL, zmente toto na JOIN s users
+        const shelters = await knex('shelters').select('id', 'name', 'location', 'description');
+        res.json(shelters);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Nepodarilo sa načítať útulky.' });
+    }
 });
 
-// Registrácia útulku
+// Registrácia útulku (OPRAVENÁ LOGIKA)
 router.post('/register', async (req, res) => {
-  const { name, description, address, location, email, password, phone } = req.body;
-  if (!name || !description || !address || !location || !email || !password) {
-    return res.status(400).json({ error: 'Vyplňte všetky povinné polia.' });
-  }
-  try {
-    // Overenie, či už existuje útulok s rovnakým emailom
-    const existing = await knex('shelters').where({ email }).first();
-    if (existing) return res.status(400).json({ error: 'Email už je použitý.' });
+    const { name, description, address, location, email, password, phone } = req.body;
+    
+    if (!name || !description || !address || !location || !email || !password) {
+        return res.status(400).json({ error: 'Vyplňte všetky povinné polia.' });
+    }
+    
+    try {
+        // KROK 1: Overenie, či už email neexistuje v primárnej tabuľke users
+        const existingUser = await knex('users').where({ email }).first();
+        if (existingUser) {
+            return res.status(400).json({ error: 'Email už je použitý iným používateľom alebo útulkom.' });
+        }
 
-    // Hashovanie hesla
-    const bcrypt = require('bcrypt');
-    const SALT_ROUNDS = 10;
-    const hash = await bcrypt.hash(password, SALT_ROUNDS);
+        // Hashovanie hesla
+        const hash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // Vloženie útulku do databázy
-    const result = await knex('shelters').insert({
-      name,
-      description,
-      address,
-      location,
-      email,
-      password_hash: hash,
-      phone
-    }).returning('id');
-    
-    const shelterId = Array.isArray(result) ? (typeof result[0] === 'object' ? result[0].id : result[0]) : result;
-    const shelter = await knex('shelters').where({ id: shelterId }).first();
-    res.json({ shelter: {
-      id: shelter.id,
-      name: shelter.name,
-      description: shelter.description,
-      address: shelter.address,
-      location: shelter.location,
-      email: shelter.email,
-      phone: shelter.phone
-    }});
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Registrácia útulku zlyhala.' });
-  }
+        // KROK 2: Vloženie do tabuľky USERS s rolou 'shelter'
+        const userResult = await knex('users').insert({ 
+            email, 
+            password_hash: hash, 
+            name, 
+            phone, 
+            role: 'shelter' // Dôležité: nastaviť rolu!
+        }).returning('id');
+
+        // Získanie user ID
+        const userId = Array.isArray(userResult) 
+            ? (typeof userResult[0] === 'object' ? userResult[0].id : userResult[0]) 
+            : userResult;
+
+        // KROK 3: Vloženie do tabuľky SHELTERS s user_id
+        // POZOR: Stĺpce email, password_hash, phone musia byť z tabuľky shelters odstránené!
+        const shelterResult = await knex('shelters').insert({
+            user_id: userId, // Prepojenie s tabuľkou users
+            name,
+            description,
+            address,
+            location,
+            // Email, password_hash a phone už NEUPLATŇUJEME, sú v tabuľke users.
+        }).returning('id');
+
+        const shelterId = Array.isArray(shelterResult) 
+            ? (typeof shelterResult[0] === 'object' ? shelterResult[0].id : shelterResult[0]) 
+            : shelterResult;
+
+        // KROK 4: Automatické prihlásenie a vrátenie tokenu
+        // Načítame novo vytvoreného používateľa pre vytvorenie JWT
+        const user = await knex('users').where({ id: userId }).first();
+
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+        
+        // Vrátime token a základné údaje o útulku (zatiaľ z tabuľky shelters)
+        res.json({ 
+            token, 
+            shelter: {
+                id: shelterId,
+                name: shelter.name,
+                description: shelter.description,
+                address: shelter.address,
+                location: shelter.location,
+                email: user.email, // Email berieme z tabuľky users
+                phone: user.phone
+            }
+        });
+
+    } catch (err) {
+        console.error('Chyba pri registrácii útulku:', err);
+        res.status(500).json({ error: 'Registrácia útulku zlyhala.' });
+    }
 });
 
 // Získanie kontaktných údajov útulku podľa ID (Používa Flutter formulár)
 router.get('/:id/contact', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const shelter = await knex('shelters').where({ id }).first();
-    if (!shelter) return res.status(404).json({ error: 'Útulok nenájdený' });
-    
-    // Odosielame dáta, ktoré Flutter potrebuje
-    res.json({
-      id: shelter.id,
-      name: shelter.name,
-      email: shelter.email,
-      phone: shelter.phone,
-      address: shelter.address,
-      location: shelter.location
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Chyba databázy' });
-  }
+    const { id } = req.params;
+    try {
+        // Teraz potrebujeme spojiť shelters a users, aby sme získali email a telefón
+        const [shelter] = await knex('shelters')
+            .join('users', 'shelters.user_id', 'users.id')
+            .select(
+                'shelters.id', 
+                'shelters.name', 
+                'shelters.address', 
+                'shelters.location',
+                'users.email', // Získavame z users
+                'users.phone'  // Získavame z users
+            )
+            .where('shelters.id', id);
+
+        if (!shelter) return res.status(404).json({ error: 'Útulok nenájdený' });
+        
+        // Odosielame dáta, ktoré Flutter potrebuje
+        res.json({
+            id: shelter.id,
+            name: shelter.name,
+            email: shelter.email,
+            phone: shelter.phone,
+            address: shelter.address,
+            location: shelter.location
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Chyba databázy' });
+    }
 });
 
 // --- NOVÁ RUTA: ODOSLANIE SPRÁVY ÚTULKU ---
