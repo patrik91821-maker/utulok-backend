@@ -1,3 +1,10 @@
+
+const express = require('express');
+const knex = require('../db');
+require('dotenv').config();
+
+const router = express.Router();
+
 // Zoznam všetkých útulkov pre výber pri darovaní
 router.get('/all', async (req, res) => {
   try {
@@ -8,11 +15,6 @@ router.get('/all', async (req, res) => {
     res.status(500).json({ error: 'Nepodarilo sa načítať útulky.' });
   }
 });
-const express = require('express');
-const knex = require('../db');
-require('dotenv').config();
-
-const router = express.Router();
 
 // Registrácia útulku
 router.post('/register', async (req, res) => {
