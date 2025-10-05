@@ -1,3 +1,13 @@
+// Zoznam všetkých útulkov pre výber pri darovaní
+router.get('/all', async (req, res) => {
+  try {
+    const shelters = await knex('shelters').select('id', 'name', 'location', 'description');
+    res.json(shelters);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Nepodarilo sa načítať útulky.' });
+  }
+});
 const express = require('express');
 const knex = require('../db');
 require('dotenv').config();
