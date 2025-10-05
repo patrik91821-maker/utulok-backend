@@ -1,69 +1,91 @@
-const knex = require('../db'); // Knex inštancia je správne importovaná
+const knex = require('../db');
 
-// ====================================================================
-// 1. Vytvorenie nového psa (IBA pre Shelter Manager)
-// ====================================================================
-exports.addDog = async (req, res) => {
-    // req.user je nastavené middlewarem, keď je užívateľ Shelter Manager.
-    // Získame ID útulku (shelter_id) z autentifikačného tokenu.
-    const shelterId = req.user.shelter_id || req.user.id; 
-
-    // Kontrola, či Shelter Manager poslal potrebné dáta
-    const { name, breed, description, age, gender, status, image_url } = req.body;
-
-    if (!name || !age || !gender || !description) {
-        return res.status(400).json({ message: "Chýbajú povinné polia (meno, vek, pohlavie, popis)." });
+/**
+ * Pridá nového psa do databázy (KROK 1: Textové dáta).
+ * Predpokladá, že používateľ je overený a je manažér útulku (middleware).
+ * Vráti novo vytvorený objekt psa s jeho ID.
+ */
+async function addDog(req, res) {
+    const { 
+        name, 
+        breed, 
+        age, 
+        description, 
+        gender,
+        status, 
+    } = req.body;
+    
+    // Získame shelter_id z tokenu overeného používateľa
+    const shelterId = req.user.shelter_id;
+    if (!shelterId) {
+        return res.status(403).json({ error: 'Chyba autorizácie: Nie ste priradený k žiadnemu útulku.' });
     }
+
+    // Základná validácia
+    if (!name || !gender || !description) { // Vek nie je povinný
+        return res.status(400).json({ error: 'Meno, pohlavie a popis sú povinné polia.' });
+    }
+    
+    // Predvolená URL pre obrázok, kým sa nenahrá prvá fotka
+    const defaultImageUrl = 'https://placehold.co/600x400/FFC0CB/555555?text=Novy+pes';
 
     try {
         const dogData = {
-            shelter_id: shelterId, // Priradíme psa k útulku
-            name,
-            breed,
-            description,
-            age: parseInt(age),
-            gender,
+            shelter_id: shelterId,
+            name: name,
+            breed: breed,
+            // Vek konvertujeme na int alebo null, ak chýba
+            age: parseInt(age, 10) || null, 
+            description: description,
+            gender: gender,
             status: status || 'Available', // Predvolený stav
-            image_url: image_url || 'https://placehold.co/600x400/FFC0CB/555555?text=Novy+pes',
-            created_at: new Date(),
-            updated_at: new Date(),
+            image_url: defaultImageUrl, // Nastavíme predvolený obrázok
+            created_at: knex.fn.now(),
+            updated_at: knex.fn.now(),
         };
 
-        // Knex - Vložíme dáta do tabuľky 'dogs'
-        // Používame .returning('id') pre získanie nového ID záznamu
+        // Vloženie nového psa do databázy a získanie ID
         const [newDogId] = await knex('dogs').insert(dogData).returning('id');
 
-        res.status(201).json({ 
-            message: "Pes bol úspešne pridaný.", 
-            id: newDogId,
-            dog: dogData
-        });
+        // Získanie celého nového záznamu pre vrátenie klientovi
+        const newDog = await knex('dogs').where({ id: newDogId }).first();
 
-    } catch (error) {
-        console.error("Chyba pri vytváraní psa:", error);
-        // Pošleme viac detailov chyby len pre debug
-        res.status(500).json({ 
-            message: "Interná chyba servera pri ukladaní psa. Skontrolujte schému DB.",
-            error_details: error.message 
-        });
+        // Vrátime celý objekt psa, aby Flutter poznal jeho ID pre ďalší krok (nahrávanie fotky)
+        res.status(201).json(newDog);
+
+    } catch (err) {
+        console.error('Chyba pri pridávaní psa:', err);
+        res.status(500).json({ error: 'Chyba servera pri vkladaní záznamu.', error_details: err.message });
     }
-};
+}
 
-// ====================================================================
+/**
+ * Aktualizuje image_url pre daného psa. (KROK 2: Po úspešnom nahratí fotky)
+ * Túto funkciu volá dog.routes.js po úspešnom uložení súboru na disk.
+ */
+async function updateDogImageUrl(dogId, imageUrl) {
+    try {
+        // Aktualizujeme len image_url pre hlavnú kartu psa
+        await knex('dogs').where({ id: dogId }).update({
+            image_url: imageUrl,
+            updated_at: knex.fn.now(),
+        });
+        return true;
+    } catch (err) {
+        console.error('Chyba pri aktualizácii URL obrázku psa:', err);
+        return false;
+    }
+}
+
 // Dočasné dummy funkcie pre úspešné spustenie rout
-// ====================================================================
-
-exports.getAllDogs = (req, res) => res.status(501).json({ message: "Not Implemented: getAllDogs" });
-exports.getDogById = (req, res) => res.status(501).json({ message: "Not Implemented: getDogById" });
-exports.updateDog = (req, res) => res.status(501).json({ message: "Not Implemented: updateDog" });
-exports.deleteDog = (req, res) => res.status(501).json({ message: "Not Implemented: deleteDog" });
+const dummyNotImplemented = (req, res) => res.status(501).json({ message: "Not Implemented: funkcia zatiaľ neimplementovaná" });
 
 
-// Export všetkých funkcií
 module.exports = {
-    addDog: exports.addDog,
-    getAllDogs: exports.getAllDogs,
-    getDogById: exports.getDogById,
-    updateDog: exports.updateDog,
-    deleteDog: exports.deleteDog,
+    addDog,
+    updateDogImageUrl, // Kľúčové pre nahrávanie fotiek
+    getAllDogs: dummyNotImplemented,
+    getDogById: dummyNotImplemented,
+    updateDog: dummyNotImplemented,
+    deleteDog: dummyNotImplemented,
 };
