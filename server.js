@@ -5,7 +5,7 @@ const cors = require('cors');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
-const sheltersRoutes = require('./routes/shelters');
+const sheltersRoutes = require('./routes/shelter');
 const shelterRegisterRoutes = require('./routes/shelter');
 const dogsRoutes = require('./routes/dogs');
 const paymentsRoutes = require('./routes/payments');
