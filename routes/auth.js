@@ -8,6 +8,18 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
 const SALT_ROUNDS = 10;
 
+// Middleware na overenie JWT tokenu
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.sendStatus(401);
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+}
+
 // register
 router.post('/register', async (req, res) => {
   const { email, password, name, phone } = req.body;
@@ -41,6 +53,17 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// GET /auth/me - vráti údaje o prihlásenom používateľovi
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const user = await knex('users').where({ id: req.user.id }).first();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, phone: user.phone } });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
