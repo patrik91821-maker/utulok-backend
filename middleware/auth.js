@@ -1,7 +1,5 @@
-const jwt = require('jsonwebtoken');
-require('dotenv').config();
 const knex = require('../db'); // Ak by sme potrebovali DB operácie, nechávame to tu
-const jwt = require('jsonwebtoken'); // !!! PRIDANÝ KRITICKÝ IMPORT !!!
+const jwt = require('jsonwebtoken'); // Import je nevyhnutný
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
 
