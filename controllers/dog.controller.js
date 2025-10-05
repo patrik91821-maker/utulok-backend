@@ -1,49 +1,49 @@
-const knex = require('../db'); // Predpokladáme, že knex je dostupný
+const Dog = require('../models/Dog'); // Uistite sa, že model je importovaný
+const mongoose = require('mongoose');
 
-// --- FUNKCIA: Pridanie nového psa ---
-// Endpoint: POST /api/dogs/create
-async function addDog(req, res) {
-    // Vďaka middleware 'protect' a 'shelterManager' vieme, že používateľ je manažér útulku.
-    const shelterId = req.user.shelter_id; 
-    
-    // Dáta prichádzajúce z Flutter formulára
-    const { name, breed, description, age, gender, image_url } = req.body;
+// ====================================================================
+// 1. Vytvorenie nového psa (IBA pre Shelter Manager)
+// ====================================================================
+exports.createDog = async (req, res) => {
+    // userId bol pridaný do req v auth.middleware.js. V tomto prípade je to shelterId.
+    const shelterId = req.userId;
 
-    // Kontrola povinných polí
-    if (!name || !description || !age || !gender) {
-        return res.status(400).json({ error: 'Chýbajú povinné polia: meno, popis, vek alebo pohlavie.' });
+    // Kontrola, či Shelter Manager poslal potrebné dáta
+    const { name, breed, description, age, gender, status, image_url } = req.body;
+
+    if (!name || !age || !gender || !description) {
+        return res.status(400).json({ message: "Chýbajú povinné polia (meno, vek, pohlavie, popis)." });
     }
-    
-    try {
-        // Vloženie nového psa do tabuľky 'dogs'
-        const result = await knex('dogs').insert({
-            shelter_id: shelterId, // DÔLEŽITÉ: Priradenie k útulku prihláseného manažéra
-            name,
-            // Nastavenie defaultnej hodnoty, ak je plemeno prázdne
-            breed: breed || 'Neznáme plemeno', 
-            description,
-            // Vek konvertujeme na integer. Predpokladáme, že Flutter posiela platné číslo.
-            age: parseInt(age, 10), 
-            gender, // 'M' alebo 'F'
-            image_url: image_url || null,
-        }).returning('*'); // Vráti vytvorený záznam
 
-        // Knex vráti buď pole, alebo objekt. Normalizujeme výsledok.
-        const newDog = Array.isArray(result) ? (typeof result[0] === 'object' ? result[0] : result[0]) : result;
-        
-        // Vrátenie úspešnej odpovede (201 Created)
+    try {
+        const newDog = new Dog({
+            shelter: shelterId, // Automaticky priradíme shelterId
+            name,
+            breed,
+            description,
+            age: parseInt(age),
+            gender,
+            status: status || 'Available', // Predvolený stav
+            image_url: image_url || 'https://placehold.co/600x400/FFC0CB/555555?text=Novy+pes',
+        });
+
+        await newDog.save();
+
         res.status(201).json({ 
-            message: 'Pes bol úspešne pridaný.', 
+            message: "Pes bol úspešne pridaný.", 
             dog: newDog 
         });
 
     } catch (error) {
-        console.error('Chyba pri vkladaní nového psa do DB:', error);
-        res.status(500).json({ error: 'Interná chyba servera pri pridávaní psa.' });
+        console.error("Chyba pri vytváraní psa:", error);
+        res.status(500).json({ message: "Interná chyba servera pri ukladaní psa." });
     }
-}
+};
 
+// ... Ďalšie kontrolné funkcie ...
+
+// Export všetkých funkcií
 module.exports = {
-    addDog,
-    // ... ďalšie exporty pre psov
+    createDog,
+    // ... ďalšie funkcie (napr. getAllDogs, getDogById, updateDog, deleteDog)
 };
