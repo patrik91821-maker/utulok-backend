@@ -70,22 +70,23 @@ router.post('/register', async (req, res) => {
             : shelterResult;
 
         // KROK 4: Automatické prihlásenie a vrátenie tokenu
-        // Načítame novo vytvoreného používateľa pre vytvorenie JWT
+        // Načítame novo vytvoreného používateľa pre vytvorenie JWT (potrebujeme aj uložené dáta, ak boli defaultné)
         const user = await knex('users').where({ id: userId }).first();
 
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
         
-        // Vrátime token a základné údaje o útulku (zatiaľ z tabuľky shelters)
+        // Vrátime token a základné údaje o útulku.
+        // OPRAVA: Používame premenné, ktoré máme definované (user a req.body dáta)
         res.json({ 
             token, 
             shelter: {
                 id: shelterId,
-                name: shelter.name,
-                description: shelter.description,
-                address: shelter.address,
-                location: shelter.location,
-                email: user.email, // Email berieme z tabuľky users
-                phone: user.phone
+                name: user.name, // Zoberieme z user, kde je uložené
+                description: description,
+                address: address,
+                location: location,
+                email: user.email, // Z user
+                phone: user.phone // Z user
             }
         });
 
