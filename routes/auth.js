@@ -15,9 +15,10 @@ router.post('/register', async (req, res) => {
   try {
     const existing = await knex('users').where({ email }).first();
     if (existing) return res.status(400).json({ error: 'Email already used' });
-    const hash = await bcrypt.hash(password, SALT_ROUNDS);
-    const [id] = await knex('users').insert({ email, password_hash: hash, name, phone }).returning('id');
-    const user = await knex('users').where({ id }).first();
+  const hash = await bcrypt.hash(password, SALT_ROUNDS);
+  const result = await knex('users').insert({ email, password_hash: hash, name, phone }).returning('id');
+  const userId = Array.isArray(result) ? (typeof result[0] === 'object' ? result[0].id : result[0]) : result;
+  const user = await knex('users').where({ id: userId }).first();
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   } catch (err) {
