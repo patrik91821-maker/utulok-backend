@@ -21,7 +21,7 @@ router.post('/register', async (req, res) => {
     const hash = await bcrypt.hash(password, SALT_ROUNDS);
 
     // Vloženie útulku do databázy
-    const [id] = await knex('shelters').insert({
+    const result = await knex('shelters').insert({
       name,
       description,
       address,
@@ -30,8 +30,9 @@ router.post('/register', async (req, res) => {
       password_hash: hash,
       phone
     }).returning('id');
-
-    const shelter = await knex('shelters').where({ id }).first();
+    // Podľa verzie knex/pg môže byť result [{id: ...}] alebo [id]
+    const shelterId = Array.isArray(result) ? (typeof result[0] === 'object' ? result[0].id : result[0]) : result;
+    const shelter = await knex('shelters').where({ id: shelterId }).first();
     res.json({ shelter: {
       id: shelter.id,
       name: shelter.name,
