@@ -20,165 +20,167 @@ const router = express.Router();
 // Zoznam všetkých útulkov pre výber pri darovaní / kontaktovaní
 // GET /api/shelters/all
 router.get('/all', async (req, res) => {
-    try {
-        // Získanie iba verejných informácií aktívnych útulkov
-        const shelters = await knex('shelters')
-            .select('id', 'name', 'location', 'description', 'active')
-            .where({ active: true });
-        
-        // Obalenie výsledku do JSON objektu pre lepšiu konzistentnosť
-        res.json({ shelters }); 
-    } catch (err) {
-        console.error('Chyba pri načítaní útulkov:', err);
-        res.status(500).json({ error: 'Nepodarilo sa načítať útulky.' });
-    }
+    try {
+        // OPRAVA: Odstránenie .where({ active: true }) - Zobrazíme všetky útulky
+        // Pre produkčné nasadenie je odporúčané nechať filtrovanie (active: true) 
+        // alebo implementovať riadnu logiku schvaľovania útulkov administrátorom.
+        const shelters = await knex('shelters')
+            .select('id', 'name', 'location', 'description', 'active')
+            // .where({ active: true }); // TOTO SA ODSTRÁNILO
+        
+        // Obalenie výsledku do JSON objektu pre lepšiu konzistentnosť
+        res.json({ shelters }); 
+    } catch (err) {
+        console.error('Chyba pri načítaní útulkov:', err);
+        res.status(500).json({ error: 'Nepodarilo sa načítať útulky.' });
+    }
 });
 
 // Registrácia útulku (AUTOMATICKY vytvára používateľa s rolou 'shelter')
 // POST /api/shelters/register
 router.post('/register', async (req, res) => {
-    const { name, description, address, location, email, password, phone } = req.body;
-    
-    if (!name || !description || !address || !location || !email || !password) {
-        return res.status(400).json({ error: 'Vyplňte všetky povinné polia.' });
-    }
-    
-    try {
-        // KROK 1: Overenie existencie používateľa
-        const existingUser = await knex('users').where({ email }).first();
-        if (existingUser) {
-            return res.status(400).json({ error: 'Email už je použitý iným používateľom alebo útulkom.' });
-        }
+    const { name, description, address, location, email, password, phone } = req.body;
+    
+    if (!name || !description || !address || !location || !email || !password) {
+        return res.status(400).json({ error: 'Vyplňte všetky povinné polia.' });
+    }
+    
+    try {
+        // KROK 1: Overenie existencie používateľa
+        const existingUser = await knex('users').where({ email }).first();
+        if (existingUser) {
+            return res.status(400).json({ error: 'Email už je použitý iným používateľom alebo útulkom.' });
+        }
 
-        // Hashovanie hesla
-        const hash = await bcrypt.hash(password, SALT_ROUNDS);
+        // Hashovanie hesla
+        const hash = await bcrypt.hash(password, SALT_ROUNDS);
 
-        // KROK 2: Vloženie do tabuľky USERS
-        const userResult = await knex('users').insert({ 
-            email, 
-            password_hash: hash, 
-            name, 
-            phone, 
-            role: 'shelter' // Dôležité: nastaviť rolu!
-        }).returning('id');
+        // KROK 2: Vloženie do tabuľky USERS
+        const userResult = await knex('users').insert({ 
+            email, 
+            password_hash: hash, 
+            name, 
+            phone, 
+            role: 'shelter' // Dôležité: nastaviť rolu!
+        }).returning('id');
 
-        const userId = Array.isArray(userResult) 
-            ? (typeof userResult[0] === 'object' ? userResult[0].id : userResult[0]) 
-            : userResult;
+        const userId = Array.isArray(userResult) 
+            ? (typeof userResult[0] === 'object' ? userResult[0].id : userResult[0]) 
+            : userResult;
 
-        // KROK 3: Vloženie do tabuľky SHELTERS s user_id
-        const shelterResult = await knex('shelters').insert({
-            user_id: userId, 
-            name,
-            description,
-            address,
-            location,
-            active: true // Útulok je po registrácii aktívny
-        }).returning('id');
+        // KROK 3: Vloženie do tabuľky SHELTERS s user_id
+        const shelterResult = await knex('shelters').insert({
+            user_id: userId, 
+            name,
+            description,
+            address,
+            location,
+            active: true // Útulok je po registrácii aktívny
+        }).returning('id');
 
-        const shelterId = Array.isArray(shelterResult) 
-            ? (typeof shelterResult[0] === 'object' ? shelterResult[0].id : shelterResult[0]) 
-            : shelterResult;
+        const shelterId = Array.isArray(shelterResult) 
+            ? (typeof shelterResult[0] === 'object' ? shelterResult[0].id : shelterResult[0]) 
+            : shelterResult;
 
-        // KROK 4: Automatické prihlásenie a vrátenie tokenu
-        const user = await knex('users').where({ id: userId }).first();
+        // KROK 4: Automatické prihlásenie a vrátenie tokenu
+        const user = await knex('users').where({ id: userId }).first();
 
-        // DÔLEŽITÉ: Pridať shelterId do tokenu pre middleware shelterManager
-        const token = jwt.sign(
-            { id: user.id, email: user.email, role: user.role, shelterId: shelterId },
-            JWT_SECRET, 
-            { expiresIn: '30d' }
-        );
-        
-        res.json({ 
-            token, 
-            user: { 
-                 id: user.id,
-                 email: user.email,
-                 name: user.name,
-                 role: user.role,
-                 // Posielame shelterId aj v objekte user pre rýchlu dostupnosť na frontend
-                 shelterId: shelterId, 
-            },
-            shelter: {
-                id: shelterId,
-                name: name,
-                description: description,
-                address: address,
-                location: location,
-                phone: phone
-            }
-        });
+        // DÔLEŽITÉ: Pridať shelterId do tokenu pre middleware shelterManager
+        const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role, shelterId: shelterId },
+            JWT_SECRET, 
+            { expiresIn: '30d' }
+        );
+        
+        res.json({ 
+            token, 
+            user: { 
+                 id: user.id,
+                 email: user.email,
+                 name: user.name,
+                 role: user.role,
+                 // Posielame shelterId aj v objekte user pre rýchlu dostupnosť na frontend
+                 shelterId: shelterId, 
+            },
+            shelter: {
+                id: shelterId,
+                name: name,
+                description: description,
+                address: address,
+                location: location,
+                phone: phone
+            }
+        });
 
-    } catch (err) {
-        console.error('Chyba pri registrácii útulku:', err);
-        res.status(500).json({ error: 'Registrácia útulku zlyhala.' });
-    }
+    } catch (err) {
+        console.error('Chyba pri registrácii útulku:', err);
+        res.status(500).json({ error: 'Registrácia útulku zlyhala.' });
+    }
 });
 
 // Získanie kontaktných údajov útulku podľa ID
 // GET /api/shelters/:id/contact
 router.get('/:id/contact', async (req, res) => {
-    const { id } = req.params;
-    try {
-        // Spojenie shelters a users pre získanie emailu a telefónu
-        const [shelter] = await knex('shelters')
-            .join('users', 'shelters.user_id', 'users.id')
-            .select(
-                'shelters.id', 
-                'shelters.name', 
-                'shelters.address', 
-                'shelters.location',
-                'users.email', // Získavame z users
-                'users.phone'  // Získavame z users
-            )
-            .where('shelters.id', id)
-            .where('shelters.active', true); 
+    const { id } = req.params;
+    try {
+        // Spojenie shelters a users pre získanie emailu a telefónu
+        const [shelter] = await knex('shelters')
+            .join('users', 'shelters.user_id', 'users.id')
+            .select(
+                'shelters.id', 
+                'shelters.name', 
+                'shelters.address', 
+                'shelters.location',
+                'users.email', // Získavame z users
+                'users.phone'  // Získavame z users
+            )
+            .where('shelters.id', id)
+            .where('shelters.active', true); 
 
-        if (!shelter) return res.status(404).json({ error: 'Útulok nenájdený' });
-        
-        res.json({
-            id: shelter.id,
-            name: shelter.name,
-            email: shelter.email,
-            phone: shelter.phone,
-            address: shelter.address,
-            location: shelter.location
-        });
-    } catch (err) {
-        console.error('Chyba pri získavaní kontaktu útulku:', err);
-        res.status(500).json({ error: 'Chyba databázy' });
-    }
+        if (!shelter) return res.status(404).json({ error: 'Útulok nenájdený' });
+        
+        res.json({
+            id: shelter.id,
+            name: shelter.name,
+            email: shelter.email,
+            phone: shelter.phone,
+            address: shelter.address,
+            location: shelter.location
+        });
+    } catch (err) {
+        console.error('Chyba pri získavaní kontaktu útulku:', err);
+        res.status(500).json({ error: 'Chyba databázy' });
+    }
 });
 
 // Odoslanie správy útulku
 // POST /api/shelters/send-message
 router.post('/send-message', async (req, res) => {
-    const { recipientEmail, subject, body, senderEmail } = req.body;
+    const { recipientEmail, subject, body, senderEmail } = req.body;
 
-    if (!recipientEmail || !subject || !body || !senderEmail) {
-        return res.status(400).json({ success: false, error: 'Chýbajú povinné polia pre odoslanie správy.' });
-    }
+    if (!recipientEmail || !subject || !body || !senderEmail) {
+        return res.status(400).json({ success: false, error: 'Chýbajú povinné polia pre odoslanie správy.' });
+    }
 
-    try {
-        const success = await sendShelterContactMessage({
-            toEmail: recipientEmail,
-            subject: subject,
-            body: body,
-            replyTo: senderEmail,
-        });
+    try {
+        const success = await sendShelterContactMessage({
+            toEmail: recipientEmail,
+            subject: subject,
+            body: body,
+            replyTo: senderEmail,
+        });
 
-        if (success) {
-            res.status(200).json({ success: true, message: 'Správa bola úspešne odoslaná.' });
-        } else {
-            // Chyba na strane Nodemailer/konfigurácie
-            res.status(500).json({ success: false, error: 'Chyba pri odosielaní správy cez Nodemailer.' });
-        }
+        if (success) {
+            res.status(200).json({ success: true, message: 'Správa bola úspešne odoslaná.' });
+        } else {
+            // Chyba na strane Nodemailer/konfigurácie
+            res.status(500).json({ success: false, error: 'Chyba pri odosielaní správy cez Nodemailer.' });
+        }
 
-    } catch (err) {
-        console.error('Chyba v POST /send-message:', err);
-        res.status(500).json({ success: false, error: 'Interná chyba servera pri spracovaní správy.' });
-    }
+    } catch (err) {
+        console.error('Chyba v POST /send-message:', err);
+        res.status(500).json({ success: false, error: 'Interná chyba servera pri spracovaní správy.' });
+    }
 });
 
 // =========================================================================
@@ -188,40 +190,40 @@ router.post('/send-message', async (req, res) => {
 // Načíta zoznam psov, ktoré patria prihlásenému útulku
 // GET /api/shelters/me/dogs
 router.get('/me/dogs', protect, shelterManager, async (req, res) => {
-    const shelterId = req.user.shelterId; // Získané z JWT
+    const shelterId = req.user.shelterId; // Získané z JWT
 
-    try {
-        const dogs = await knex('dogs')
-            .where({ shelter_id: shelterId })
-            .select('*') 
-            .orderBy('created_at', 'desc');
+    try {
+        const dogs = await knex('dogs')
+            .where({ shelter_id: shelterId })
+            .select('*') 
+            .orderBy('created_at', 'desc');
 
-        // Obalenie výsledku do JSON objektu
-        res.json({ dogs }); 
-    } catch (err) {
-        console.error('Chyba pri načítaní psov pre útulok:', err);
-        res.status(500).json({ error: 'Chyba servera pri načítaní psov.' });
-    }
+        // Obalenie výsledku do JSON objektu
+        res.json({ dogs }); 
+    } catch (err) {
+        console.error('Chyba pri načítaní psov pre útulok:', err);
+        res.status(500).json({ error: 'Chyba servera pri načítaní psov.' });
+    }
 });
 
 // Načíta zoznam donácií pre prihlásený útulok
 // GET /api/shelters/me/payments
 router.get('/me/payments', protect, shelterManager, async (req, res) => {
-    const shelterId = req.user.shelterId; // Získané z JWT
+    const shelterId = req.user.shelterId; // Získané z JWT
 
-    try {
-        // Načítame všetky platby priradené k tomuto útulku
-        const payments = await knex('payments')
-            .where({ shelter_id: shelterId })
-            .select('*') 
-            .orderBy('created_at', 'desc');
+    try {
+        // Načítame všetky platby priradené k tomuto útulku
+        const payments = await knex('payments')
+            .where({ shelter_id: shelterId })
+            .select('*') 
+            .orderBy('created_at', 'desc');
 
-        // Obalenie výsledku do JSON objektu
-        res.json({ payments }); 
-    } catch (err) {
-        console.error('Chyba pri načítaní platieb pre útulok:', err);
-        res.status(500).json({ error: 'Chyba servera pri načítaní platieb.' });
-    }
+        // Obalenie výsledku do JSON objektu
+        res.json({ payments }); 
+    } catch (err) {
+        console.error('Chyba pri načítaní platieb pre útulok:', err);
+        res.status(500).json({ error: 'Chyba servera pri načítaní platieb.' });
+    }
 });
 
 module.exports = router;
