@@ -18,9 +18,6 @@ async function addDog(req, res) {
     // OPRAVA: Získame shelterId (CamelCase) z req.user, ktoré je tam pridané v middleware/auth.js
     const shelterId = req.user.shelterId; // Správny kľúč je 'shelterId', nie 'shelter_id'
 
-    // Poznámka: Kontrola (!shelterId) už nemusí byť tak prísna, pretože to overil middleware shelterManager.
-    // Ak sa sem kód dostal, shelterId by malo byť prítomné a platné.
-    
     // Základná validácia
     if (!name || !gender || !description) { // Vek nie je povinný
         return res.status(400).json({ error: 'Meno, pohlavie a popis sú povinné polia.' });
@@ -40,14 +37,18 @@ async function addDog(req, res) {
             gender: gender,
             status: status || 'Available', // Predvolený stav
             image_url: defaultImageUrl, // Nastavíme predvolený obrázok
+            // Ak už databáza nepridáva časové pečiatky automaticky cez migráciu/schemu, necháme ich tu:
             created_at: knex.fn.now(),
             updated_at: knex.fn.now(),
         };
 
-        // Vloženie nového psa do databázy a získanie ID
-        const [newDogId] = await knex('dogs').insert(dogData).returning('id');
+        // KĽÚČOVÁ OPRAVA: Použijeme destructuring na objekt vo vnútri poľa, 
+        // aby sme získali integer 'id'.
+        // Knex vracia napr.: [{ id: 1 }]
+        const [{ id: newDogId }] = await knex('dogs').insert(dogData).returning('id');
 
         // Získanie celého nového záznamu pre vrátenie klientovi
+        // newDogId je teraz čistý integer ID, Knex dotaz prebehne správne
         const newDog = await knex('dogs').where({ id: newDogId }).first();
 
         // Vrátime celý objekt psa, aby Flutter poznal jeho ID pre ďalší krok (nahrávanie fotky)
@@ -55,7 +56,8 @@ async function addDog(req, res) {
 
     } catch (err) {
         console.error('Chyba pri pridávaní psa:', err);
-        res.status(500).json({ error: 'Chyba servera pri vkladaní záznamu.', error_details: err.message });
+        // Zmenil som error_details na err.stack, aby sme videli celú cestu chyby, ak by sa objavila ďalšia
+        res.status(500).json({ error: 'Chyba servera pri vkladaní záznamu.', error_details: err.stack });
     }
 }
 
