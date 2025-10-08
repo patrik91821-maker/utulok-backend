@@ -35,12 +35,14 @@ async function getAllDogs(req, res) {
  * @route GET /api/dogs/:id
  */
 async function getDogById(req, res) {
-    const { id: dogId } = req.params;
+    // --- OPRAVA/ROBUSTNOSŤ: Explicitná konverzia na číslo ---
+    const dogId = parseInt(req.params.id, 10);
+    if (isNaN(dogId)) return res.status(400).json({ error: 'Neplatné ID psa.' });
 
     try {
         const dog = await knex('dogs')
             .where({ id: dogId })
-            .select('*') // Vyberie všetky stĺpce, vrátane image_url
+            .select('*') 
             .first();
 
         if (!dog) {
@@ -58,8 +60,6 @@ async function getDogById(req, res) {
 
 /**
  * Pridá nového psa do databázy (KROK 1: Textové dáta).
- * Predpokladá, že používateľ je overený a je manažér útulku (middleware).
- * Vráti novo vytvorený objekt psa s jeho ID.
  * @route POST /api/dogs
  */
 async function addDog(req, res) {
@@ -80,27 +80,27 @@ async function addDog(req, res) {
         return res.status(400).json({ error: 'Meno, pohlavie a popis sú povinné polia.' });
     }
     
-    // Predvolená URL pre obrázok, kým sa nenahrá prvá fotka (vyžaduje NOT NULL v DB)
+    // Predvolená URL pre obrázok, kým sa nenahrá prvá fotka
     const defaultImageUrl = 'https://placehold.co/600x400/FFC0CB/555555?text=Novy+pes';
 
     try {
         const dogData = {
             shelter_id: shelterId,
             name: name,
-            breed: breed || null, // Ak plemeno chýba
-            // Vek konvertujeme na int alebo null. Db schema ho má ako char varying, 
-            // ale pre ucelenosť vkladaných dát použijeme to čo je najvhodnejšie
+            breed: breed || null, 
             age: parseInt(age, 10) || null, 
             description: description,
             gender: gender,
-            status: status || 'Prijatý', // Použijeme status 'Prijatý' z DB defaultu 
-            image_url: defaultImageUrl, // Vďaka tomuto splníme NOT NULL podmienku
+            status: status || 'Prijatý', 
+            image_url: defaultImageUrl, 
             created_at: knex.fn.now(),
             updated_at: knex.fn.now(),
         };
 
-        const [{ id: newDogId }] = await knex('dogs').insert(dogData).returning('id');
-
+        // --- ZMENA PRE ROBUSTNOSŤ: Bezpečná extrakcia ID ---
+        const [insertedObjectOrId] = await knex('dogs').insert(dogData).returning('id');
+        const newDogId = insertedObjectOrId.id || insertedObjectOrId;
+        
         const newDog = await knex('dogs').where({ id: newDogId }).first();
 
         res.status(201).json(newDog);
@@ -116,7 +116,10 @@ async function addDog(req, res) {
  * @route PUT /api/dogs/:id
  */
 async function updateDog(req, res) {
-    const { id: dogId } = req.params;
+    // --- OPRAVA/ROBUSTNOSŤ: Explicitná konverzia na číslo ---
+    const dogId = parseInt(req.params.id, 10);
+    if (isNaN(dogId)) return res.status(400).json({ error: 'Neplatné ID psa.' });
+    
     const { name, breed, age, description, gender, status, adoptable, image_url } = req.body;
 
     // Príprava dát na aktualizáciu. updated_at je vždy aktualizované.
@@ -138,7 +141,7 @@ async function updateDog(req, res) {
     }
 
     // Ak nemáme čo aktualizovať, vrátime chybu
-    if (Object.keys(updateData).length === 1 && updateData.updated_at) {
+    if (Object.keys(updateData).length === 1) { // Kontroluje iba prítomnosť updated_at
         return res.status(400).json({ error: 'Žiadne platné dáta na aktualizáciu.' });
     }
 
@@ -166,7 +169,7 @@ async function updateDog(req, res) {
  */
 async function updateDogImageUrl(dogId, imageUrl) {
     try {
-        // Aktualizujeme len image_url pre hlavnú kartu psa
+        // ID je tu už garantovane číslo z routera, takže to je bezpečné
         await knex('dogs').where({ id: dogId }).update({
             image_url: imageUrl,
             updated_at: knex.fn.now(),

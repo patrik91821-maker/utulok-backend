@@ -5,23 +5,13 @@ const multer = require('multer');
 const dogController = require('../controllers/dog.controller'); 
 
 // *** Cloudinary Import a Konfigurácia ***
-// Predpokladáme, že Cloudinary environment variables sú nastavené:
-// CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
 const cloudinary = require('cloudinary').v2;
 const streamifier = require('streamifier'); // Pre nahrávanie bufferu z pamäte
 
 // Knihovňu 'streamifier' je potrebné doinštalovať: npm install streamifier
 
-// Cloudinary konfigurácia sa načíta automaticky z env premenných, 
-// ak ich máš definované (napr. v .env súbore). 
-// Ak nie, musíš ju nakonfigurovať manuálne:
-/*
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-*/
+// Cloudinary konfigurácia sa načíta automaticky z env premenných.
+// ...
 
 const router = express.Router();
 
@@ -35,8 +25,8 @@ const upload = multer({
 // ---------------------------------------------------
 
 // Public: list adoptable dogs (only from active shelters)
-router.get('/', dogController.getAllDogs); // Používam implementovanú funkciu z controlleru
-router.get('/:id', dogController.getDogById); // Používam implementovanú funkciu z controlleru
+router.get('/', dogController.getAllDogs);
+router.get('/:id', dogController.getDogById);
 
 // --- RUTA PRE PRIDANIE PSA (KROK 1: Textové dáta) ---
 router.post('/create', protect, shelterManager, dogController.addDog);
@@ -89,17 +79,22 @@ router.post('/:id/attachments', protect, upload.single('file'), async (req, res)
         const publicId = cloudinaryResult.public_id;
 
         // 2. Vloženie záznamu prílohy do tabuľky 'attachments'
-        const [aid] = await knex('attachments').insert({ 
+        const [insertedObjectOrId] = await knex('attachments').insert({ 
             dog_id: dogId, 
             url: imageUrl, 
             filename: req.file.originalname,
-            public_id: publicId // Uložíme public ID pre prípadné mazanie z Cloudinary
+            public_id: publicId
         }).returning('id');
         
-        const attach = await knex('attachments').where({ id: aid }).first();
+        // --- OPRAVA CHYBY 'invalid input syntax for type integer' ---
+        // Knex s PostgreSQL môže pri .returning('id') vrátiť objekt { id: 10 }
+        // namiesto samotného čísla 10. Zabezpečíme, že 'attachmentId' je číslo.
+        const attachmentId = insertedObjectOrId.id || insertedObjectOrId;
+        
+        // Načítanie práve vloženej prílohy
+        const attach = await knex('attachments').where({ id: attachmentId }).first();
         
         // 3. KĽÚČOVÁ ZMENA: Aktualizácia hlavnej image_url pre psa
-        // Teraz používame URL z Cloudinary!
         const success = await dogController.updateDogImageUrl(dogId, imageUrl); 
         
         if (!success) {
@@ -110,7 +105,6 @@ router.post('/:id/attachments', protect, upload.single('file'), async (req, res)
         res.json(attach);
     } catch (err) {
         console.error('Chyba pri nahrávaní alebo DB operácii:', err);
-        // Ak nahrávanie zlyhá, nemusíme mazať lokálny súbor, pretože je v pamäti.
         res.status(500).json({ error: 'Nahrávanie na Cloudinary alebo ukladanie do DB zlyhalo.' });
     }
 });
