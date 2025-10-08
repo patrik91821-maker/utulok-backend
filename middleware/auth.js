@@ -1,12 +1,11 @@
-const knex = require('../db'); // Ak by sme potrebovali DB operácie, nechávame to tu
-const jwt = require('jsonwebtoken'); // Import je nevyhnutný
+const knex = require('../db');
+const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
 
 /**
  * 1. Ochranná funkcia (protect)
  * Overí JWT token a pridelí informácie o užívateľovi do req.user.
- * V routách sa používa ako 'protect'.
  */
 function protect(req, res, next) {
     const auth = req.headers.authorization;
@@ -19,7 +18,7 @@ function protect(req, res, next) {
     
     try {
         const payload = jwt.verify(token, JWT_SECRET);
-        req.user = payload; // Pridá info o užívateľovi (vrátane role a shelter_id)
+        req.user = payload; // Pridá info o užívateľovi (vrátane role a shelterId)
         next();
     } catch (e) {
         // Napr. token vypršal
@@ -29,18 +28,22 @@ function protect(req, res, next) {
 
 /**
  * 2. Overenie pre manažérov útulkov (shelterManager)
- * Vyžaduje, aby bola rola 'shelter'.
+ * Vyžaduje, aby bola rola 'shelter' A aby bol používateľ priradený k útulku (mal shelterId).
  */
 function shelterManager(req, res, next) {
     // protect musí byť zavolaný predtým
     if (!req.user) return res.status(401).json({ error: 'Authentication required' });
 
     const role = req.user.role;
+    // KRITICKÁ ZMENA: Kontrolujeme aj shelterId, ktoré je z tokenu
+    const shelterId = req.user.shelterId; 
     
-    // Kontrola, či je používateľ manažér útulku
-    if (role !== 'shelter') {
-        return res.status(403).json({ error: 'Len pre manažérov útulkov (Shelter Manager).' });
+    // Kontrola, či je používateľ manažér útulku A je priradený k útulku
+    if (role !== 'shelter' || !shelterId) {
+        // Táto chyba už bude v middleware, kde patrí
+        return res.status(403).json({ error: 'Chyba autorizácie: Nie ste priradený k žiadnemu útulku.' });
     }
+    
     next();
 }
 
@@ -57,7 +60,7 @@ function adminOnly(req, res, next) {
 
 // Export všetkých potrebných funkcií pod správnymi názvami pre routy
 module.exports = {
-    protect,          
+    protect,          
     adminOnly,
-    shelterManager,   
+    shelterManager,   
 };
