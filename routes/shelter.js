@@ -21,12 +21,9 @@ const router = express.Router();
 // GET /api/shelters/all
 router.get('/all', async (req, res) => {
     try {
-        // OPRAVA: Odstránenie .where({ active: true }) - Zobrazíme všetky útulky
-        // Pre produkčné nasadenie je odporúčané nechať filtrovanie (active: true) 
-        // alebo implementovať riadnu logiku schvaľovania útulkov administrátorom.
+        // Konsistentne zobrazujeme VŠETKY útulky, ak filter active: true nie je použitý
         const shelters = await knex('shelters')
-            .select('id', 'name', 'location', 'description', 'active')
-            // .where({ active: true }); // TOTO SA ODSTRÁNILO
+            .select('id', 'name', 'location', 'description', 'active');
         
         // Obalenie výsledku do JSON objektu pre lepšiu konzistentnosť
         res.json({ shelters }); 
@@ -135,13 +132,17 @@ router.get('/:id/contact', async (req, res) => {
                 'users.phone'  // Získavame z users
             )
             .where('shelters.id', id)
-            .where('shelters.active', true); 
-
+            // OPRAVA 404 CHYBY: Odstránili sme filter na aktivitu,
+            // aby bolo možné kontaktovať všetky útulky, ktoré vidí /all endpoint.
+            // .where('shelters.active', true); 
+            
         if (!shelter) return res.status(404).json({ error: 'Útulok nenájdený' });
         
+        // Nastavenie aliasu 'recipientEmail' pre konzistentnosť s emailService
         res.json({
             id: shelter.id,
             name: shelter.name,
+            recipientEmail: shelter.email, // Pridaný alias
             email: shelter.email,
             phone: shelter.phone,
             address: shelter.address,
@@ -153,7 +154,7 @@ router.get('/:id/contact', async (req, res) => {
     }
 });
 
-// Odoslanie správy útulku
+// Odoslanie správy útulku (Používa emailService)
 // POST /api/shelters/send-message
 router.post('/send-message', async (req, res) => {
     const { recipientEmail, subject, body, senderEmail } = req.body;
@@ -174,7 +175,8 @@ router.post('/send-message', async (req, res) => {
             res.status(200).json({ success: true, message: 'Správa bola úspešne odoslaná.' });
         } else {
             // Chyba na strane Nodemailer/konfigurácie
-            res.status(500).json({ success: false, error: 'Chyba pri odosielaní správy cez Nodemailer.' });
+            console.error('EmailService zlyhal, ale nevyniesol chybu (možno zlá konfigurácia/limit).');
+            res.status(500).json({ success: false, error: 'Chyba pri odosielaní správy cez emailService. Skontrolujte logy Nodemailer.' });
         }
 
     } catch (err) {
