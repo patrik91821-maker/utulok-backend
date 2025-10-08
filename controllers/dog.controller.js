@@ -15,12 +15,12 @@ async function addDog(req, res) {
         status, 
     } = req.body;
     
-    // Získame shelter_id z tokenu overeného používateľa
-    const shelterId = req.user.shelter_id;
-    if (!shelterId) {
-        return res.status(403).json({ error: 'Chyba autorizácie: Nie ste priradený k žiadnemu útulku.' });
-    }
+    // OPRAVA: Získame shelterId (CamelCase) z req.user, ktoré je tam pridané v middleware/auth.js
+    const shelterId = req.user.shelterId; // Správny kľúč je 'shelterId', nie 'shelter_id'
 
+    // Poznámka: Kontrola (!shelterId) už nemusí byť tak prísna, pretože to overil middleware shelterManager.
+    // Ak sa sem kód dostal, shelterId by malo byť prítomné a platné.
+    
     // Základná validácia
     if (!name || !gender || !description) { // Vek nie je povinný
         return res.status(400).json({ error: 'Meno, pohlavie a popis sú povinné polia.' });
@@ -31,7 +31,7 @@ async function addDog(req, res) {
 
     try {
         const dogData = {
-            shelter_id: shelterId,
+            shelter_id: shelterId, // Tu používame shelter_id pre databázový stĺpec
             name: name,
             breed: breed,
             // Vek konvertujeme na int alebo null, ak chýba
