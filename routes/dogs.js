@@ -1,103 +1,123 @@
 const express = require('express');
 const knex = require('../db');
-// Oprava importu: Používame naše custom middleware funkcie
 const { protect, shelterManager } = require('../middleware/auth'); 
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-
-// PRIDANIE IMPORTU CONTROLLERU
 const dogController = require('../controllers/dog.controller'); 
+
+// *** Cloudinary Import a Konfigurácia ***
+// Predpokladáme, že Cloudinary environment variables sú nastavené:
+// CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+const cloudinary = require('cloudinary').v2;
+const streamifier = require('streamifier'); // Pre nahrávanie bufferu z pamäte
+
+// Knihovňu 'streamifier' je potrebné doinštalovať: npm install streamifier
+
+// Cloudinary konfigurácia sa načíta automaticky z env premenných, 
+// ak ich máš definované (napr. v .env súbore). 
+// Ak nie, musíš ju nakonfigurovať manuálne:
+/*
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+*/
 
 const router = express.Router();
 
-// --- Konfigurácia Multer pre nahrávanie súborov ---
-
-// Zabezpečí, že adresár 'uploads' existuje
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-// Nastavenie úložiska: ukladá do /uploads s unikátnym názvom súboru
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    // Vytvoríme unikátne meno súboru
-    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2,8)}${ext}`);
-  }
+// --- Konfigurácia Multer pre ukladanie do PAMÄTE (BUFFER) ---
+// Týmto sa vyhneme ukladaniu súborov lokálne na disk servera.
+const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 } // Max 5MB
 });
-const upload = multer({ storage });
 
 // ---------------------------------------------------
 
 // Public: list adoptable dogs (only from active shelters)
-router.get('/', async (req, res) => {
-  try {
-    const rows = await knex('dogs')
-      .join('shelters', 'dogs.shelter_id', 'shelters.id')
-      .where('shelters.active', true)
-      .select('dogs.*');
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'DB error' });
-  }
-});
-
-// Public: get dog detail
-router.get('/:id', async (req, res) => {
-  const id = req.params.id;
-  try {
-    const d = await knex('dogs').where({ id }).first();
-    if (!d) return res.status(404).json({ error: 'Not found' });
-    const attachments = await knex('attachments').where({ dog_id: id });
-    res.json({ ...d, attachments });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error' });
-  }
-});
+router.get('/', dogController.getAllDogs); // Používam implementovanú funkciu z controlleru
+router.get('/:id', dogController.getDogById); // Používam implementovanú funkciu z controlleru
 
 // --- RUTA PRE PRIDANIE PSA (KROK 1: Textové dáta) ---
-// Používame dogController.addDog na spracovanie a vrátenie nového ID psa.
 router.post('/create', protect, shelterManager, dogController.addDog);
 
 
+/**
+ * Cloudinary Upload Service: Pomocná funkcia na nahrávanie bufferu.
+ * Vráti Promise, ktorá sa resolvne s URL.
+ */
+const uploadStream = (buffer, dogId) => {
+    return new Promise((resolve, reject) => {
+        // Vytvorenie streamu pre nahrávanie
+        let stream = cloudinary.uploader.upload_stream({
+            // Uložíme ich do priečinka špecifického pre psa/útulok
+            folder: `utulok-app/dogs/${dogId}`, 
+            tags: ['dog-attachment'],
+        }, (error, result) => {
+            if (result) {
+                resolve(result);
+            } else {
+                reject(error);
+            }
+        });
+
+        // Pipe-ovanie bufferu z Multeru do Cloudinary streamu
+        streamifier.createReadStream(buffer).pipe(stream);
+    });
+};
+
+
 // --- RUTA PRE NAHRÁVANIE PRÍLOHY (KROK 2: Fotka) ---
-// Upload attachment for dog (multipart/form-data) - VRÁTI ID PRÍLOHY
+// Súbor je teraz v req.file.buffer
 router.post('/:id/attachments', protect, upload.single('file'), async (req, res) => {
-  const dogId = parseInt(req.params.id, 10);
-  
-  // Kontrola, či existuje súbor
-  if (!req.file) return res.status(400).json({ error: 'Súbor je povinný.' });
-  
-  // Kontrola, či ID psa existuje
-  if (isNaN(dogId)) return res.status(400).json({ error: 'Neplatné ID psa.' });
-
-  // URL súboru, ktorý sa bude servírovať staticky
-  const url = `/uploads/${req.file.filename}`; 
-  
-  try {
-    // 1. Vloženie záznamu prílohy do tabuľky 'attachments'
-    const [aid] = await knex('attachments').insert({ dog_id: dogId, url, filename: req.file.originalname }).returning('id');
-    const attach = await knex('attachments').where({ id: aid }).first();
+    const dogId = parseInt(req.params.id, 10);
     
-    // 2. KĽÚČOVÁ ZMENA: Aktualizácia hlavnej image_url pre psa
-    // Vždy, keď je nahraná nová príloha, nastavíme ju ako hlavný obrázok psa.
-    const success = await dogController.updateDogImageUrl(dogId, url); 
-    
-    if (!success) {
-      // Toto by nemalo nastať, ak databáza funguje
-      console.warn('Nepodarilo sa aktualizovať hlavný obrázok psa, ale príloha bola uložená.');
+    // Kontrola, či existuje súbor (ako buffer v pamäti)
+    if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ error: 'Súbor je povinný.' });
     }
+    
+    if (isNaN(dogId)) return res.status(400).json({ error: 'Neplatné ID psa.' });
 
-    res.json(attach);
-  } catch (err) {
-    console.error('Chyba pri nahrávaní prílohy:', err);
-    // Odstránenie súboru, ak zlyhá DB operácia (dobrý zvyk)
-    fs.unlink(req.file.path, () => {});
-    res.status(500).json({ error: 'Nahrávanie zlyhalo.' });
-  }
+    let cloudinaryResult;
+    try {
+        // 1. Nahrávanie súboru na Cloudinary
+        cloudinaryResult = await uploadStream(req.file.buffer, dogId);
+        
+        // Získanie URL, ktorú Cloudinary vrátil
+        const imageUrl = cloudinaryResult.secure_url; 
+        const publicId = cloudinaryResult.public_id;
+
+        // 2. Vloženie záznamu prílohy do tabuľky 'attachments'
+        const [aid] = await knex('attachments').insert({ 
+            dog_id: dogId, 
+            url: imageUrl, 
+            filename: req.file.originalname,
+            public_id: publicId // Uložíme public ID pre prípadné mazanie z Cloudinary
+        }).returning('id');
+        
+        const attach = await knex('attachments').where({ id: aid }).first();
+        
+        // 3. KĽÚČOVÁ ZMENA: Aktualizácia hlavnej image_url pre psa
+        // Teraz používame URL z Cloudinary!
+        const success = await dogController.updateDogImageUrl(dogId, imageUrl); 
+        
+        if (!success) {
+             // Zaznamenanie chyby, ak sa neuloží hlavný obrázok do DB
+             console.warn('Nepodarilo sa aktualizovať hlavný obrázok psa, ale príloha bola uložená.');
+        }
+
+        res.json(attach);
+    } catch (err) {
+        console.error('Chyba pri nahrávaní alebo DB operácii:', err);
+        // Ak nahrávanie zlyhá, nemusíme mazať lokálny súbor, pretože je v pamäti.
+        res.status(500).json({ error: 'Nahrávanie na Cloudinary alebo ukladanie do DB zlyhalo.' });
+    }
 });
+
+// --- RUTA PRE AKTUALIZÁCIU PSA ---
+router.put('/:id', protect, shelterManager, dogController.updateDog);
+// --- RUTA PRE ZMAZANIE PSA ---
+router.delete('/:id', protect, shelterManager, dogController.deleteDog);
 
 module.exports = router;

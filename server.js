@@ -4,6 +4,9 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
 
+// Pridaná routa pre nahrávanie súborov
+const uploadsRoutes = require('./routes/uploads'); 
+
 const authRoutes = require('./routes/auth');
 const sheltersRoutes = require('./routes/shelter');
 const shelterRegisterRoutes = require('./routes/shelter');
@@ -24,6 +27,8 @@ app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Routes
+app.use('/api/uploads', uploadsRoutes); // Registrácia routy pre nahrávanie
+
 app.use('/auth', authRoutes);
 app.use('/shelters', sheltersRoutes);
 app.use('/shelter', shelterRegisterRoutes);
