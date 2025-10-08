@@ -2,7 +2,7 @@ const knex = require('../db');
 
 /**
  * Získa zoznam všetkých psov z databázy.
- * Vrátane stĺpca 'image_url'.
+ * Vrátane stĺpca 'image_url', 'adoption_fee' a 'donation_goal'.
  * @route GET /api/dogs
  */
 async function getAllDogs(req, res) {
@@ -17,10 +17,11 @@ async function getAllDogs(req, res) {
                 'description', 
                 'adoptable', 
                 'status',
-                'image_url', // Získavame image_url
-                'shelter_id'
+                'image_url', 
+                'shelter_id',
+                'adoption_fee', // PRIDANÉ: Poplatok za adopciu
+                'donation_goal' // PRIDANÉ: Cieľ darovania
             )
-            // Môžeš pridať aj základné zoradenie, napr. podľa ID zostupne
             .orderBy('id', 'desc'); 
 
         res.status(200).json(dogs);
@@ -35,11 +36,11 @@ async function getAllDogs(req, res) {
  * @route GET /api/dogs/:id
  */
 async function getDogById(req, res) {
-    // --- OPRAVA/ROBUSTNOSŤ: Explicitná konverzia na číslo ---
     const dogId = parseInt(req.params.id, 10);
     if (isNaN(dogId)) return res.status(400).json({ error: 'Neplatné ID psa.' });
 
     try {
+        // select('*') vyberie aj nové stĺpce 'adoption_fee' a 'donation_goal'
         const dog = await knex('dogs')
             .where({ id: dogId })
             .select('*') 
@@ -59,7 +60,8 @@ async function getDogById(req, res) {
 
 
 /**
- * Pridá nového psa do databázy (KROK 1: Textové dáta).
+ * Pridá nového psa do databázy.
+ * Rozšírené o adopčný poplatok a cieľ darovania.
  * @route POST /api/dogs
  */
 async function addDog(req, res) {
@@ -70,9 +72,12 @@ async function addDog(req, res) {
         description, 
         gender,
         status, 
+        // --- NOVÉ POLIA ---
+        adoptionFee, 
+        donationGoal, 
+        // ------------------
     } = req.body;
     
-    // Získanie shelterId z req.user (pridané overovacím middleware)
     const shelterId = req.user.shelterId; 
 
     // Základná validácia
@@ -80,7 +85,6 @@ async function addDog(req, res) {
         return res.status(400).json({ error: 'Meno, pohlavie a popis sú povinné polia.' });
     }
     
-    // Predvolená URL pre obrázok, kým sa nenahrá prvá fotka
     const defaultImageUrl = 'https://placehold.co/600x400/FFC0CB/555555?text=Novy+pes';
 
     try {
@@ -93,11 +97,17 @@ async function addDog(req, res) {
             gender: gender,
             status: status || 'Prijatý', 
             image_url: defaultImageUrl, 
+            
+            // --- MAPOVANIE NOVÝCH POLÍ ---
+            // Konvertujeme na float a ak je hodnota neplatná (napr. prázdny string), použijeme 0
+            adoption_fee: parseFloat(adoptionFee) || 0, 
+            donation_goal: parseFloat(donationGoal) || 0, 
+            // ------------------------------
+
             created_at: knex.fn.now(),
             updated_at: knex.fn.now(),
         };
 
-        // --- ZMENA PRE ROBUSTNOSŤ: Bezpečná extrakcia ID ---
         const [insertedObjectOrId] = await knex('dogs').insert(dogData).returning('id');
         const newDogId = insertedObjectOrId.id || insertedObjectOrId;
         
@@ -112,36 +122,50 @@ async function addDog(req, res) {
 }
 
 /**
- * Všeobecná aktualizácia záznamu psa, vrátane možnosti zmeny image_url.
+ * Všeobecná aktualizácia záznamu psa.
+ * Rozšírené o adopčný poplatok a cieľ darovania.
  * @route PUT /api/dogs/:id
  */
 async function updateDog(req, res) {
-    // --- OPRAVA/ROBUSTNOSŤ: Explicitná konverzia na číslo ---
     const dogId = parseInt(req.params.id, 10);
     if (isNaN(dogId)) return res.status(400).json({ error: 'Neplatné ID psa.' });
     
-    const { name, breed, age, description, gender, status, adoptable, image_url } = req.body;
+    const { 
+        name, 
+        breed, 
+        age, 
+        description, 
+        gender, 
+        status, 
+        adoptable, 
+        image_url,
+        // --- NOVÉ POLIA NA AKTUALIZÁCIU ---
+        adoptionFee,
+        donationGoal,
+        // ------------------------------------
+    } = req.body;
 
-    // Príprava dát na aktualizáciu. updated_at je vždy aktualizované.
     const updateData = { updated_at: knex.fn.now() };
 
     // Dynamicky pridávame len polia, ktoré boli v požiadavke poslané
     if (name !== undefined) updateData.name = name;
     if (breed !== undefined) updateData.breed = breed;
-    // Pre vek respektujeme, že musí byť celé číslo alebo null
     if (age !== undefined) updateData.age = parseInt(age, 10) || null; 
     if (description !== undefined) updateData.description = description;
     if (gender !== undefined) updateData.gender = gender;
     if (status !== undefined) updateData.status = status;
     if (adoptable !== undefined) updateData.adoptable = adoptable;
-    
-    // Ak je poslaná nová image_url (buď na nastavenie, alebo napr. null na reset)
     if (image_url !== undefined) {
         updateData.image_url = image_url;
     }
+    
+    // --- SPRACUJEME NOVÉ FINANČNÉ POLIA ---
+    if (adoptionFee !== undefined) updateData.adoption_fee = parseFloat(adoptionFee) || 0;
+    if (donationGoal !== undefined) updateData.donation_goal = parseFloat(donationGoal) || 0;
+    // ------------------------------------
 
     // Ak nemáme čo aktualizovať, vrátime chybu
-    if (Object.keys(updateData).length === 1) { // Kontroluje iba prítomnosť updated_at
+    if (Object.keys(updateData).length === 1) { 
         return res.status(400).json({ error: 'Žiadne platné dáta na aktualizáciu.' });
     }
 
@@ -149,7 +173,7 @@ async function updateDog(req, res) {
         const updatedRows = await knex('dogs')
             .where({ id: dogId })
             .update(updateData)
-            .returning('*'); // Vráti aktualizovaný záznam
+            .returning('*'); 
 
         if (updatedRows.length === 0) {
             return res.status(404).json({ error: 'Pes s daným ID nebol nájdený.' });
@@ -164,12 +188,10 @@ async function updateDog(req, res) {
 }
 
 /**
- * Aktualizuje image_url pre daného psa. (KROK 2: Po úspešnom nahratí fotky)
- * Túto funkciu volá dog.routes.js po úspešnom uložení súboru na disk.
+ * Aktualizuje image_url pre daného psa.
  */
 async function updateDogImageUrl(dogId, imageUrl) {
     try {
-        // ID je tu už garantovane číslo z routera, takže to je bezpečné
         await knex('dogs').where({ id: dogId }).update({
             image_url: imageUrl,
             updated_at: knex.fn.now(),
