@@ -23,7 +23,7 @@ router.get('/all', async (req, res) => {
 	try {
 		// Nové: vyberie všetkých používateľov s rolou 'shelter'
 		const shelters = await knex('users')
-			.select('id', 'name', 'email', 'phone', 'role', 'created_at')
+			.select('id', 'name', 'email', 'phone', 'role', 'address', 'created_at')
 			.where('role', 'shelter');
 		res.json({ shelters });
 	} catch (err) {
