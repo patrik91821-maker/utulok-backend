@@ -20,17 +20,16 @@ const router = express.Router();
 // Zoznam všetkých útulkov pre výber pri darovaní / kontaktovaní
 // GET /api/shelters/all
 router.get('/all', async (req, res) => {
-    try {
-        // Konsistentne zobrazujeme VŠETKY útulky, ak filter active: true nie je použitý
-        const shelters = await knex('shelters')
-            .select('id', 'name', 'location', 'description', 'active');
-        
-        // Obalenie výsledku do JSON objektu pre lepšiu konzistentnosť
-        res.json({ shelters }); 
-    } catch (err) {
-        console.error('Chyba pri načítaní útulkov:', err);
-        res.status(500).json({ error: 'Nepodarilo sa načítať útulky.' });
-    }
+	try {
+		// Nové: vyberie všetkých používateľov s rolou 'shelter'
+		const shelters = await knex('users')
+			.select('id', 'name', 'email', 'phone', 'role', 'created_at')
+			.where('role', 'shelter');
+		res.json({ shelters });
+	} catch (err) {
+		console.error('Chyba pri načítaní útulkov:', err);
+		res.status(500).json({ error: 'Nepodarilo sa načítať útulky.' });
+	}
 });
 
 // Registrácia útulku (AUTOMATICKY vytvára používateľa s rolou 'shelter')
