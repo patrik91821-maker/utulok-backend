@@ -22,9 +22,20 @@ const router = express.Router();
 router.get('/all', async (req, res) => {
 	try {
 		// Nové: vyberie všetkých používateľov s rolou 'shelter'
+		// Pripojí shelter_id z tabuľky shelters cez LEFT JOIN
 		const shelters = await knex('users')
-			.select('id', 'name', 'email', 'phone', 'role', 'address', 'created_at')
-			.where('role', 'shelter');
+			.leftJoin('shelters', 'users.id', 'shelters.user_id')
+			.select(
+				'users.id',
+				'users.name',
+				'users.email',
+				'users.phone',
+				'users.role',
+				'users.address',
+				'users.created_at',
+				'shelters.id as shelter_id'
+			)
+			.where('users.role', 'shelter');
 		res.json({ shelters });
 	} catch (err) {
 		console.error('Chyba pri načítaní útulkov:', err);
