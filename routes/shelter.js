@@ -52,13 +52,15 @@ router.post('/register', async (req, res) => {
         const hash = await bcrypt.hash(password, SALT_ROUNDS);
 
         // KROK 2: Vloženie do tabuľky USERS
-        const userResult = await knex('users').insert({ 
-            email, 
-            password_hash: hash, 
-            name, 
-            phone, 
-            role: 'shelter' // Dôležité: nastaviť rolu!
-        }).returning('id');
+		const fullAddress = address + (location != null && location.trim() != '' ? ', ' + location : '');
+		const userResult = await knex('users').insert({ 
+			email, 
+			password_hash: hash, 
+			name, 
+			phone, 
+			role: 'shelter',
+			address: fullAddress // Uloží adresu + mesto do address
+		}).returning('id');
 
         const userId = Array.isArray(userResult) 
             ? (typeof userResult[0] === 'object' ? userResult[0].id : userResult[0]) 
