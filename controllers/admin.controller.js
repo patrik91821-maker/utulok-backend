@@ -18,7 +18,7 @@ async function fetchAllShelters(req, res) {
             'active' // Dôležité pre admina
             // Nezahrňte citlivé dáta ako password_hash!
         ).orderBy('created_at', 'desc');
-        res.json(shelters);
+        res.json({ shelters });
     } catch (err) {
         console.error('Chyba pri načítaní všetkých útulkov (Admin):', err);
         res.status(500).json({ error: 'Chyba servera pri načítaní útulkov.' });
@@ -36,7 +36,7 @@ async function fetchAllPayments(req, res) {
             .select('*')
             .orderBy('created_at', 'desc');
 
-        res.json(payments);
+        res.json({ payments });
     } catch (err) {
         console.error('Chyba pri načítaní všetkých platieb (Admin):', err);
         res.status(500).json({ error: 'Chyba servera pri načítaní platieb.' });
