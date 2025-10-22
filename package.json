@@ -25,6 +25,7 @@
     "stripe": "^11.10.0"
   },
   "devDependencies": {
-    "nodemon": "^2.0.22"
+    "nodemon": "^2.0.22",
+    "sqlite3": "^5.1.7"
   }
 }

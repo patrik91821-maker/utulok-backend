@@ -6,18 +6,19 @@ const knex = require('../db');
  */
 async function fetchAllShelters(req, res) {
     try {
-        // Používame knex('shelters').select(...) namiesto knex('shelters').orderBy(...)
-        // aby sme selektovali iba potrebné stĺpce, ale pridáme aj order by.
-        const shelters = await knex('shelters').select(
-            'id', 
-            'name', 
-            'email', 
-            'phone', 
-            'location', 
-            'description',
-            'active' // Dôležité pre admina
-            // Nezahrňte citlivé dáta ako password_hash!
-        ).orderBy('created_at', 'desc');
+        // Používame join s users, aby sme dostali email, phone, location
+        const shelters = await knex('shelters')
+            .join('users', 'shelters.user_id', 'users.id')
+            .select(
+                'shelters.id', 
+                'shelters.name', 
+                'users.email', 
+                'users.phone', 
+                'shelters.address as location', 
+                'shelters.description',
+                'shelters.active' // Dôležité pre admina
+                // Nezahrňte citlivé dáta ako password_hash!
+            ).orderBy('shelters.created_at', 'desc');
         res.json({ shelters });
     } catch (err) {
         console.error('Chyba pri načítaní všetkých útulkov (Admin):', err);
