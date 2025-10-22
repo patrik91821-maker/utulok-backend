@@ -8,18 +8,17 @@ async function fetchAllShelters(req, res) {
     try {
         // Používame join s users, aby sme dostali email, phone, location
         const shelters = await knex('shelters')
-            .join('users', 'shelters.user_id', 'users.id')
-            .select(
-                'shelters.id', 
-                'shelters.name', 
-                'users.email', 
-                'users.phone', 
-                'shelters.address as location', 
-                'shelters.description',
-                'shelters.active' // Dôležité pre admina
-                // Nezahrňte citlivé dáta ako password_hash!
-            ).orderBy('shelters.created_at', 'desc');
-        res.json({ shelters });
+                .join('users', 'shelters.user_id', 'users.id')
+                .select(
+                    'shelters.id', 
+                    'shelters.name as shelter_name', 
+                    'users.email as manager_email', 
+                    'users.phone as manager_phone', 
+                    'shelters.address', 
+                    'shelters.description',
+                    'shelters.active'
+                ).orderBy('shelters.created_at', 'desc');
+            res.json({ shelters });
     } catch (err) {
         console.error('Chyba pri načítaní všetkých útulkov (Admin):', err);
         res.status(500).json({ error: 'Chyba servera pri načítaní útulkov.' });
