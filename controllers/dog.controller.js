@@ -207,7 +207,44 @@ async function updateDogImageUrl(dogId, imageUrl) {
  * Odstránenie psa. (Zatiaľ neimplementované)
  * @route DELETE /api/dogs/:id
  */
-const deleteDog = (req, res) => res.status(501).json({ message: "Not Implemented: Odstránenie psa zatiaľ neimplementované" });
+/**
+ * Odstráni psa podľa ID. Vyžaduje rolu shelter manager.
+ * @route DELETE /api/dogs/:id
+ */
+async function deleteDog(req, res) {
+    const dogId = parseInt(req.params.id, 10);
+    if (isNaN(dogId)) return res.status(400).json({ error: 'Neplatné ID psa.' });
+
+    try {
+        // Skontrolujeme, či pes existuje
+        const dog = await knex('dogs').where({ id: dogId }).first();
+        if (!dog) {
+            return res.status(404).json({ error: 'Pes s daným ID nebol nájdený.' });
+        }
+
+        // Skontrolujeme, či má používateľ prístup (iba vlastný shelter)
+        // Predpokladáme, že shelterManager middleware už skontroloval rolu
+        // Ale môžeme pridať kontrolu, či pes patrí do shelter používateľa
+        if (req.user.shelter_id !== dog.shelter_id) {
+            return res.status(403).json({ error: 'Nemáte oprávnenie vymazať tohto psa.' });
+        }
+
+        // Vymažeme psa (attachments sa vymažú automaticky kvôli CASCADE)
+        const deletedRows = await knex('dogs').where({ id: dogId }).del();
+
+        if (deletedRows === 0) {
+            return res.status(404).json({ error: 'Pes nebol vymazaný.' });
+        }
+
+        // TODO: Vymazať obrázky z Cloudinary (voliteľné, pre čistotu)
+
+        res.status(200).json({ message: 'Pes bol úspešne vymazaný.' });
+
+    } catch (err) {
+        console.error(`Chyba pri vymazávaní psa (ID: ${dogId}):`, err);
+        res.status(500).json({ error: 'Chyba servera pri vymazávaní záznamu.', error_details: err.stack });
+    }
+}
 
 
 module.exports = {
