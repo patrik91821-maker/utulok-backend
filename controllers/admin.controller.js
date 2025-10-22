@@ -31,10 +31,16 @@ async function fetchAllShelters(req, res) {
  */
 async function fetchAllPayments(req, res) {
     try {
-        // Predpokladáme, že máte tabuľku 'payments'
+        // Pridáme join na shelters, aby sme získali shelter_name
         const payments = await knex('payments')
-            .select('*')
-            .orderBy('created_at', 'desc');
+            .leftJoin('shelters', 'payments.shelter_id', 'shelters.id')
+            .leftJoin('users', 'payments.user_id', 'users.id')
+            .select(
+                'payments.*',
+                'shelters.name as shelter_name',
+                'users.email as user_email'
+            )
+            .orderBy('payments.created_at', 'desc');
 
         res.json({ payments });
     } catch (err) {
