@@ -50,11 +50,11 @@ function shelterManager(req, res, next) {
 
 /**
  * 3. Overenie pre admina (adminOnly)
- * Vyžaduje rolu 'platform_admin'.
+ * Vyžaduje rolu 'admin'.
  */
 function adminOnly(req, res, next) {
     if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-    if (req.user.role !== 'platform_admin') return res.status(403).json({ error: 'Len pre platform admina.' });
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Len pre admina.' });
     next();
 }
 
