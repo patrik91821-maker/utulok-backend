@@ -225,7 +225,7 @@ async function deleteDog(req, res) {
         // Skontrolujeme, či má používateľ prístup (iba vlastný shelter)
         // Predpokladáme, že shelterManager middleware už skontroloval rolu
         // Ale môžeme pridať kontrolu, či pes patrí do shelter používateľa
-        if (req.user.shelter_id !== dog.shelter_id) {
+        if (req.user.shelterId !== dog.shelter_id) {
             return res.status(403).json({ error: 'Nemáte oprávnenie vymazať tohto psa.' });
         }
 
